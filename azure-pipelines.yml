@@ -59,16 +59,6 @@ stages:
         platform: '$(BuildPlatform)'
         configuration: '$(BuildConfiguration)'
 
-    - task: VSTest@2
-      displayName: 'Test Assemblies'
-      inputs:
-        testAssemblyVer2: |
-        **\$(BuildConfiguration)\*unittest*.dll
-        !**\obj\**
-        codeCoverageEnabled: true
-        platform: '$(BuildPlatform)'
-        configuration: '$(BuildConfiguration)'
-
     - task: SonarSource.sonarqube.6D01813A-9589-4B15-8491-8164AEB38055.SonarQubeAnalyze@4
       displayName: 'Run Code Analysis'
 
@@ -80,16 +70,6 @@ stages:
       inputs:
         SearchPattern: '**\bin\**\*.pdb'
       continueOnError: true
-
-    - task: CopyFiles@2
-      displayName: 'Copy functional test files'
-      inputs:
-        SourceFolder: '$(agent.builddirectory)'
-        Contents: |
-        **\*.runsettings
-        **\*FunctionalTest*\**\bin\$(BuildConfiguration)\**
-        TargetFolder: '$(build.artifactstagingdirectory)\FunctionalTests'
-        flattenFolders: true
 
     - task: CopyFiles@2
       displayName: 'Copy ARM templates'
@@ -140,10 +120,10 @@ stages:
                 packageForLinux: '$(System.DefaultWorkingDirectory)\**\*.zip'
                 ScriptType: 'Inline Script'
                 InlineScript: |
-                set webroot=D:\home\site\wwwroot
-                echo %webroot%
-                del /S *.Release.config
-                copy $(Agent.TempDirectory)\license.xml D:\home\site\wwwroot
+                  set webroot=D:\home\site\wwwroot
+                  echo %webroot%
+                  del /S *.Release.config
+                  copy $(Agent.TempDirectory)\license.xml D:\home\site\wwwroot
                 enableCustomDeployment: true
                 ExcludeFilesFromAppDataFlag: false
                 enableXmlTransform: true

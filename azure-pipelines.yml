@@ -1,7 +1,3 @@
-# Deploy to Azure Kubernetes Service (AKS)
-# Build a Docker image, push to an Azure Container Registry, and deploy it to Azure Kubernetes Service.
-# https://docs.microsoft.com/azure/devops/pipelines/languages/docker
-
 trigger:
 - master
 
@@ -10,19 +6,8 @@ resources:
 
 variables:
 
-  # Container registry service connection established during pipeline creation - Docker Hub/ACR/...
-  dockerRegistryServiceConnection: '4f6a69bb-56a6-404b-8a9f-a2fa85ebfe1d'
-  imageRepository: 'divineopsexpressaks'
-  containerRegistry: 'yamlk8.azurecr.io'
-  dockerfilePath: '**/Dockerfile'
-  tag: '$(Build.BuildId)'
   
-  # Kubernetes Namespace
-  k8sNamespace: 'default'
-  imagePullSecret: 'yamlk8-auth'
-
-  # Agent VM image name
-  vmImageName: 'ubuntu-latest'
+  jraptestvariable: 'somevalue'
 
 stages:
 - stage: Build
@@ -31,57 +16,145 @@ stages:
   - job: Build
     displayName: Build job
     pool:
-      vmImage: $(vmImageName)
+      name: Hosted VS2017
+      demands:
+      - msbuild
+      - visualstudio
+      - vstest
+      - java
+
+    #Your build pipeline references an undefined variable named ‘Parameters.solution’. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab. See https://go.microsoft.com/fwlink/?linkid=865972
+    #Your build pipeline references an undefined variable named ‘Parameters.solution’. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab. See https://go.microsoft.com/fwlink/?linkid=865972
+    #Your build pipeline references the ‘BuildPlatform’ variable, which you’ve selected to be settable at queue time. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab, and then select the option to make it settable at queue time. See https://go.microsoft.com/fwlink/?linkid=865971
+    #Your build pipeline references the ‘BuildConfiguration’ variable, which you’ve selected to be settable at queue time. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab, and then select the option to make it settable at queue time. See https://go.microsoft.com/fwlink/?linkid=865971
+    #Your build pipeline references the ‘BuildConfiguration’ variable, which you’ve selected to be settable at queue time. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab, and then select the option to make it settable at queue time. See https://go.microsoft.com/fwlink/?linkid=865971
+    #Your build pipeline references the ‘BuildPlatform’ variable, which you’ve selected to be settable at queue time. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab, and then select the option to make it settable at queue time. See https://go.microsoft.com/fwlink/?linkid=865971
+    #Your build pipeline references the ‘BuildConfiguration’ variable, which you’ve selected to be settable at queue time. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab, and then select the option to make it settable at queue time. See https://go.microsoft.com/fwlink/?linkid=865971
+    #Your build pipeline references the ‘BuildConfiguration’ variable, which you’ve selected to be settable at queue time. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab, and then select the option to make it settable at queue time. See https://go.microsoft.com/fwlink/?linkid=865971
+    #Your build pipeline references an undefined variable named ‘Parameters.ArtifactName’. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab. See https://go.microsoft.com/fwlink/?linkid=865972
+
     steps:
-    - task: Docker@2
-      displayName: Build and push an image to container registry
+    - task: NuGetToolInstaller@1
+      displayName: 'Use NuGet 5.0.0'
       inputs:
-        command: buildAndPush
-        repository: $(imageRepository)
-        dockerfile: $(dockerfilePath)
-        containerRegistry: $(dockerRegistryServiceConnection)
-        tags: |
-          $(tag)
-          
-    - task: PublishPipelineArtifact@0
+        versionSpec: 5.0.0
+
+    - task: NuGetCommand@2
+      displayName: 'NuGet restore'
       inputs:
-        artifactName: 'manifests'
-        targetPath: 'manifests'
+        restoreSolution: '$(Parameters.solution)'
+
+    - task: SonarSource.sonarqube.15B84CA1-B62F-4A2A-A403-89B77A063157.SonarQubePrepare@4
+      displayName: 'Prepare analysis on SonarQube'
+      inputs:
+        SonarQube: 'Jrap Test SonarQube'
+        projectKey: TestProjectKey
+        projectName: 'Test Project Key'
+
+    - task: VSBuild@1
+      displayName: 'Build solution'
+      inputs:
+        solution: '$(Parameters.solution)'
+        msbuildArgs: '/p:DeployOnBuild=true /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true /p:PackageLocation="$(build.artifactstagingdirectory)\\"'
+        platform: '$(BuildPlatform)'
+        configuration: '$(BuildConfiguration)'
+
+    - task: VSTest@2
+      displayName: 'Test Assemblies'
+      inputs:
+        testAssemblyVer2: |
+        **\$(BuildConfiguration)\*unittest*.dll
+        !**\obj\**
+        codeCoverageEnabled: true
+        platform: '$(BuildPlatform)'
+        configuration: '$(BuildConfiguration)'
+
+    - task: SonarSource.sonarqube.6D01813A-9589-4B15-8491-8164AEB38055.SonarQubeAnalyze@4
+      displayName: 'Run Code Analysis'
+
+    - task: SonarSource.sonarqube.291ed61f-1ee4-45d3-b1b0-bf822d9095ef.SonarQubePublish@4
+      displayName: 'Publish Quality Gate Result'
+
+    - task: PublishSymbols@1
+      displayName: 'Publish symbols path'
+      inputs:
+        SearchPattern: '**\bin\**\*.pdb'
+      continueOnError: true
+
+    - task: CopyFiles@2
+      displayName: 'Copy functional test files'
+      inputs:
+        SourceFolder: '$(agent.builddirectory)'
+        Contents: |
+        **\*.runsettings
+        **\*FunctionalTest*\**\bin\$(BuildConfiguration)\**
+        TargetFolder: '$(build.artifactstagingdirectory)\FunctionalTests'
+        flattenFolders: true
+
+    - task: CopyFiles@2
+      displayName: 'Copy ARM templates'
+      inputs:
+        SourceFolder: ArmTemplates
+        TargetFolder: '$(build.artifactstagingdirectory)'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Artifact'
+      inputs:
+        PathtoPublish: '$(build.artifactstagingdirectory)'
+        ArtifactName: '$(Parameters.ArtifactName)'
+
 
 - stage: Deploy
-  displayName: Deploy stage
+  displayName: Dev Deploy
   dependsOn: Build
   jobs:
   - deployment: Deploy
     displayName: Deploy job
     pool:
-      vmImage: $(vmImageName)
-    environment: 'DivineOpsexpressAKS-1669.default'
+      name: Hosted VS2017
+      demands:
+      - azureps
     strategy:
       runOnce:
         deploy:
           steps:
-          - task: DownloadPipelineArtifact@1
-            inputs:
-              artifactName: 'manifests'
-              downloadPath: '$(System.ArtifactsDirectory)/manifests'
+            - task: AzureResourceGroupDeployment@2
+              displayName: 'Azure Deployment:Create Azure App Service'
+              inputs:
+                azureSubscription: 'Visual Studio Professional (05a11ad3-90da-4cd1-89f1-e804bea8bd91)'
+                resourceGroupName: jrappel
+                location: 'East US 2'
+                csmFile: '$(System.DefaultWorkingDirectory)/**/windows-webapp-template.json'
+                overrideParameters: '-webAppName jrappersonal -hostingPlanName jrappersonal-plan -appInsightsLocation "South Central US" -sku "S1 Standard"'
+            
+            - task: DownloadSecureFile@1
+              displayName: 'Download secure file'
+              inputs:
+                secureFile: license.xml
+            
+            - task: AzureRmWebAppDeployment@4
+              displayName: 'Deploy Azure App Service'
+              inputs:
+                azureSubscription: 'Visual Studio Professional (05a11ad3-90da-4cd1-89f1-e804bea8bd91)'
+                WebAppName: jrappersonal
+                packageForLinux: '$(System.DefaultWorkingDirectory)\**\*.zip'
+                ScriptType: 'Inline Script'
+                InlineScript: |
+                set webroot=D:\home\site\wwwroot
+                echo %webroot%
+                del /S *.Release.config
+                copy $(Agent.TempDirectory)\license.xml D:\home\site\wwwroot
+                enableCustomDeployment: true
+                ExcludeFilesFromAppDataFlag: false
+                enableXmlTransform: true
+                enableXmlVariableSubstitution: true
+            
+            - task: VisualStudioTestPlatformInstaller@1
+              displayName: 'Visual Studio Test Platform Installer'
 
-          - task: KubernetesManifest@0
-            displayName: Create imagePullSecret
-            inputs:
-              action: createSecret
-              secretName: $(imagePullSecret)
-              namespace: $(k8sNamespace)
-              dockerRegistryEndpoint: $(dockerRegistryServiceConnection)
-              
-          - task: KubernetesManifest@0
-            displayName: Deploy to Kubernetes cluster
-            inputs:
-              action: deploy
-              namespace: $(k8sNamespace)
-              manifests: |
-                $(System.ArtifactsDirectory)/manifests/*
-              imagePullSecrets: |
-                $(imagePullSecret)
-              containers: |
-                $(containerRegistry)/$(imageRepository):$(tag)
+            - task: AzurePowerShell@3
+              displayName: 'Azure PowerShell script: InlineScript'
+              inputs:
+                azureSubscription: 'Visual Studio Professional (05a11ad3-90da-4cd1-89f1-e804bea8bd91)'
+                ScriptType: InlineScript
+                azurePowerShellVersion: LatestVersion
